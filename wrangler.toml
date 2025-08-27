@@ -1,0 +1,7 @@
+name = "xiyue-chatii"
+main = "worker.js"
+compatibility_date = "2025-08-27"
+
+# 免费计划配置
+[env.production]
+compatibility_flags = ["nodejs_compat"]
