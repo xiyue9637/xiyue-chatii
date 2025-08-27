@@ -1,749 +1,1045 @@
-// Cloudflare Workers兼容写法 (避免模板字符串)
-const HTML = String.raw`
-<!DOCTYPE html>
+const HTML = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>XiYue Chat - Telegram风格聊天</title>
-  <style>
-    :root {
-      --tg-bg: #1c2733;
-      --tg-panel: #222e3b;
-      --tg-accent: #0088cc;
-      --tg-text: #f5f5f5;
-      --tg-border: #334250;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'Segoe UI', Arial, sans-serif;
-      background-color: var(--tg-bg);
-      color: var(--tg-text);
-      height: 100vh;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-    #app { display: none; }
-    .page { display: none; }
-    .page.active { display: flex; }
-    .header {
-      background-color: var(--tg-panel);
-      padding: 15px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1px solid var(--tg-border);
-    }
-    .logo { font-weight: bold; font-size: 1.2em; color: var(--tg-accent); }
-    .uptime { font-size: 0.85em; color: #8899a6; }
-    
-    /* 注册/登录页 */
-    .auth-page {
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-    .auth-card {
-      background: var(--tg-panel);
-      border-radius: 12px;
-      padding: 30px;
-      width: 100%;
-      max-width: 400px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-    }
-    .auth-title { text-align: center; margin-bottom: 25px; font-size: 1.8em; }
-    .form-group { margin-bottom: 20px; }
-    .form-group label {
-      display: block;
-      margin-bottom: 8px;
-      font-weight: 500;
-      color: #aebac7;
-    }
-    .form-control {
-      width: 100%;
-      padding: 12px 15px;
-      background: #2a3744;
-      border: 1px solid var(--tg-border);
-      border-radius: 8px;
-      color: var(--tg-text);
-      font-size: 1em;
-    }
-    .btn {
-      background: var(--tg-accent);
-      color: white;
-      border: none;
-      padding: 12px 20px;
-      border-radius: 8px;
-      font-size: 1em;
-      cursor: pointer;
-      width: 100%;
-      transition: background 0.2s;
-    }
-    .btn:hover { background: #0077b3; }
-    .switch-auth { text-align: center; margin-top: 20px; }
-    .error { color: #ff5252; margin-top: 8px; font-size: 0.9em; }
-    
-    /* 聊天页 */
-    .chat-container {
-      display: flex;
-      flex: 1;
-      overflow: hidden;
-    }
-    .sidebar {
-      width: 300px;
-      background: var(--tg-panel);
-      border-right: 1px solid var(--tg-border);
-      overflow-y: auto;
-    }
-    .search-box {
-      padding: 10px 15px;
-      background: #2a3744;
-      border-radius: 8px;
-      margin: 10px;
-    }
-    .user-list { list-style: none; }
-    .user-item {
-      padding: 12px 15px;
-      display: flex;
-      align-items: center;
-      border-bottom: 1px solid var(--tg-border);
-      cursor: pointer;
-      transition: background 0.1s;
-    }
-    .user-item:hover { background: #2a3744; }
-    .avatar {
-      width: 48px;
-      height: 48px;
-      border-radius: 50%;
-      margin-right: 12px;
-      object-fit: cover;
-      background: #334250;
-    }
-    .user-info { flex: 1; }
-    .username { font-weight: 500; }
-    .user-title { font-size: 0.8em; color: #8899a6; }
-    .online-dot { width: 10px; height: 10px; background: #4cc965; border-radius: 50%; margin-left: 5px; }
-    
-    .chat-area {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-    .chat-header {
-      padding: 15px;
-      background: var(--tg-panel);
-      border-bottom: 1px solid var(--tg-border);
-    }
-    .chat-with { display: flex; align-items: center; }
-    .chat-avatar { width: 40px; height: 40px; border-radius: 50%; margin-right: 10px; }
-    .message-area {
-      flex: 1;
-      overflow-y: auto;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-    }
-    .message {
-      max-width: 70%;
-      padding: 10px 15px;
-      margin-bottom: 15px;
-      border-radius: 18px;
-      line-height: 1.4;
-    }
-    .message.own { 
-      background: var(--tg-accent); 
-      color: white;
-      align-self: flex-end;
-      border-bottom-right-radius: 5px;
-    }
-    .message.other { 
-      background: #2a3744; 
-      align-self: flex-start;
-      border-bottom-left-radius: 5px;
-    }
-    .input-area {
-      padding: 15px;
-      background: var(--tg-panel);
-      border-top: 1px solid var(--tg-border);
-      display: flex;
-      gap: 10px;
-    }
-    .message-input {
-      flex: 1;
-      padding: 12px 15px;
-      background: #2a3744;
-      border: 1px solid var(--tg-border);
-      border-radius: 20px;
-      color: var(--tg-text);
-    }
-    .send-btn {
-      background: var(--tg-accent);
-      color: white;
-      border: none;
-      width: 50px;
-      height: 44px;
-      border-radius: 50%;
-      cursor: pointer;
-      font-size: 1.2em;
-    }
-    
-    .footer {
-      text-align: center;
-      padding: 15px;
-      font-size: 0.85em;
-      color: #8899a6;
-      border-top: 1px solid var(--tg-border);
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram风格聊天室</title>
+    <style>
+        :root {
+            --primary-color: #0088cc;
+            --secondary-color: #f0f0f0;
+            --text-color: #333333;
+            --bg-color: #ffffff;
+            --border-color: #e6e6e6;
+            --online-status: #00c900;
+            --admin-color: #ff0000;
+            --member-color: #ffc0cb;
+            --error-color: #ff3b30;
+            --success-color: #4cd964;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: #f5f5f5;
+            color: var(--text-color);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .container {
+            display: flex;
+            height: 100%;
+        }
+
+        /* 登录/注册页面样式 */
+        .auth-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: linear-gradient(135deg, #0088cc 0%, #005580 100%);
+        }
+
+        .auth-form {
+            background-color: var(--bg-color);
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .auth-form h2 {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            color: var(--primary-color);
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            font-size: 1rem;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 0.75rem;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .btn:hover {
+            background-color: #006ba1;
+        }
+
+        .auth-switch {
+            text-align: center;
+            margin-top: 1rem;
+        }
+
+        .auth-switch a {
+            color: var(--primary-color);
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .error-message {
+            color: var(--error-color);
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .success-message {
+            color: var(--success-color);
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        /* 聊天界面样式 */
+        .sidebar {
+            width: 350px;
+            background-color: var(--bg-color);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .sidebar-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            margin-right: 10px;
+            object-fit: cover;
+        }
+
+        .user-details {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .user-name {
+            font-weight: 500;
+        }
+
+        .user-title {
+            font-size: 0.8rem;
+            margin-top: 2px;
+        }
+
+        .title-founder {
+            color: var(--admin-color);
+            font-weight: bold;
+        }
+
+        .title-member {
+            color: var(--member-color);
+            font-weight: bold;
+        }
+
+        .search-container {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            font-size: 1rem;
+            background-color: var(--secondary-color);
+        }
+
+        .search-input:focus {
+            outline: none;
+            background-color: var(--bg-color);
+        }
+
+        .contacts-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .contact-item {
+            padding: 1rem;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .contact-item:hover {
+            background-color: var(--secondary-color);
+        }
+
+        .contact-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            margin-right: 15px;
+            object-fit: cover;
+        }
+
+        .contact-details {
+            flex: 1;
+        }
+
+        .contact-name {
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+        }
+
+        .contact-status {
+            font-size: 0.8rem;
+            color: #888;
+        }
+
+        .unread-count {
+            background-color: var(--primary-color);
+            color: white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 0.8rem;
+        }
+
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .chat-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+        }
+
+        .chat-user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            margin-right: 15px;
+            object-fit: cover;
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 1rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message {
+            max-width: 70%;
+            padding: 0.75rem;
+            margin-bottom: 0.75rem;
+            border-radius: 10px;
+            position: relative;
+            word-wrap: break-word;
+        }
+
+        .message-incoming {
+            align-self: flex-start;
+            background-color: var(--secondary-color);
+        }
+
+        .message-outgoing {
+            align-self: flex-end;
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .message-sender {
+            font-weight: 500;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+        }
+
+        .message-time {
+            font-size: 0.7rem;
+            margin-top: 5px;
+            text-align: right;
+        }
+
+        .message-input-container {
+            padding: 1rem;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+        }
+
+        .message-input {
+            flex: 1;
+            padding: 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            font-size: 1rem;
+            margin-right: 10px;
+        }
+
+        .message-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .send-button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .admin-panel {
+            padding: 1rem;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .admin-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .admin-btn {
+            padding: 0.5rem 1rem;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background-color: var(--bg-color);
+            padding: 2rem;
+            border-radius: 10px;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .site-info {
+            text-align: center;
+            padding: 1rem;
+            margin-top: auto;
+            font-size: 0.8rem;
+            color: #888;
+        }
+
+        .logout-btn {
+            background: none;
+            border: none;
+            color: var(--primary-color);
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+    </style>
 </head>
 <body>
-  <div id="app">
-    <!-- 首页 (注册/登录) -->
-    <div id="home-page" class="page active auth-page">
-      <div class="auth-card">
-        <h1 class="auth-title">XiYue Chat</h1>
-        <button id="show-login" class="btn" style="margin-bottom: 15px;">登录</button>
-        <button id="show-register" class="btn" style="background: #5a6978;">注册</button>
-        <div class="footer">本站已运行 <span id="uptime">0天 0小时 0分 0秒</span></div>
-      </div>
-    </div>
-
-    <!-- 登录页 -->
-    <div id="login-page" class="page auth-page">
-      <div class="auth-card">
-        <h1 class="auth-title">登录</h1>
-        <div class="form-group">
-          <label>用户名</label>
-          <input type="text" id="login-username" class="form-control" placeholder="输入用户名">
-        </div>
-        <div class="form-group">
-          <label>密码</label>
-          <input type="password" id="login-password" class="form-control" placeholder="输入密码">
-        </div>
-        <div class="form-group">
-          <label>头像链接 (可选)</label>
-          <input type="url" id="login-avatar" class="form-control" placeholder="https://...">
-        </div>
-        <div id="login-error" class="error"></div>
-        <button id="login-submit" class="btn">登录</button>
-        <div class="switch-auth">
-          <a href="#" id="back-to-home">返回首页</a>
-        </div>
-      </div>
-    </div>
-
-    <!-- 注册页 -->
-    <div id="register-page" class="page auth-page">
-      <div class="auth-card">
-        <h1 class="auth-title">注册</h1>
-        <div class="form-group">
-          <label>昵称</label>
-          <input type="text" id="reg-nickname" class="form-control" placeholder="输入昵称">
-        </div>
-        <div class="form-group">
-          <label>用户名</label>
-          <input type="text" id="reg-username" class="form-control" placeholder="唯一用户名">
-        </div>
-        <div class="form-group">
-          <label>密码</label>
-          <input type="password" id="reg-password" class="form-control" placeholder="至少6位">
-        </div>
-        <div class="form-group">
-          <label>邀请码</label>
-          <input type="text" id="reg-invite" class="form-control" placeholder="xiyue666">
-        </div>
-        <div class="form-group">
-          <label>头像链接</label>
-          <input type="url" id="reg-avatar" class="form-control" placeholder="https://..." value="https://i.imgur.com/0rxFJnF.png">
-        </div>
-        <div class="form-group">
-          <label>性别</label>
-          <select id="reg-gender" class="form-control">
-            <option value="♂">♂ 男</option>
-            <option value="♀">♀ 女</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>个人签名</label>
-          <input type="text" id="reg-signature" class="form-control" placeholder="一句话介绍自己">
-        </div>
-        <div id="register-error" class="error"></div>
-        <button id="register-submit" class="btn">注册</button>
-        <div class="switch-auth">
-          <a href="#" id="back-to-home-2">返回首页</a>
-        </div>
-      </div>
-    </div>
-
-    <!-- 聊天页 -->
-    <div id="chat-page" class="page">
-      <div class="header">
-        <div class="logo">XiYue Chat</div>
-        <div class="uptime" id="chat-uptime">已运行 <span>0天 0小时 0分 0秒</span></div>
-      </div>
-      <div class="chat-container">
-        <div class="sidebar">
-          <div class="search-box">
-            <input type="text" id="search-user" class="form-control" placeholder="搜索用户名...">
-          </div>
-          <ul class="user-list" id="user-list"></ul>
-        </div>
-        <div class="chat-area">
-          <div class="chat-header">
-            <div class="chat-with">
-              <img id="chat-avatar" class="chat-avatar" src="https://i.imgur.com/0rxFJnF.png">
-              <div>
-                <div id="chat-username" class="username">选择联系人</div>
-                <div id="chat-title" class="user-title"></div>
-              </div>
+    <div id="auth-page" class="auth-container">
+        <div class="auth-form">
+            <h2 id="auth-title">登录</h2>
+            <div id="auth-error" class="error-message" style="display: none;"></div>
+            <div id="auth-success" class="success-message" style="display: none;"></div>
+            <form id="auth-form">
+                <div id="register-fields" style="display: none;">
+                    <div class="form-group">
+                        <label for="nickname">昵称</label>
+                        <input type="text" id="nickname" name="nickname" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="username">用户名</label>
+                        <input type="text" id="username" name="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">密码</label>
+                        <input type="password" id="password" name="password" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="avatar">头像链接</label>
+                        <input type="url" id="avatar" name="avatar" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="gender">性别</label>
+                        <select id="gender" name="gender" required>
+                            <option value="♂">♂ 男</option>
+                            <option value="♀">♀ 女</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="bio">个人签名</label>
+                        <input type="text" id="bio" name="bio">
+                    </div>
+                    <div class="form-group">
+                        <label for="inviteCode">邀请码</label>
+                        <input type="text" id="inviteCode" name="inviteCode" required>
+                    </div>
+                </div>
+                <div id="login-fields">
+                    <div class="form-group">
+                        <label for="login-username">用户名</label>
+                        <input type="text" id="login-username" name="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">密码</label>
+                        <input type="password" id="login-password" name="password" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-avatar">更新头像链接 (可选)</label>
+                        <input type="url" id="login-avatar" name="avatar">
+                    </div>
+                </div>
+                <button type="submit" class="btn" id="auth-submit">登录</button>
+            </form>
+            <div class="auth-switch">
+                <a id="auth-switch-link">没有账号？立即注册</a>
             </div>
-          </div>
-          <div class="message-area" id="message-area"></div>
-          <div class="input-area">
-            <input type="text" id="message-input" class="message-input" placeholder="输入消息...">
-            <button id="send-btn" class="send-btn">➤</button>
-          </div>
         </div>
-      </div>
     </div>
-  </div>
 
-  <script>
-    // 运行时间计算
-    const startTime = new Date('2024-06-01T00:00:00Z');
-    function updateUptime() {
-      const now = new Date();
-      const diff = now - startTime;
-      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-      document.getElementById('uptime').textContent = 
-        \`\${days}天 \${hours}小时 \${minutes}分 \${seconds}秒\`;
-      document.querySelector('#chat-uptime span').textContent = 
-        \`\${days}天 \${hours}小时 \${minutes}分 \${seconds}秒\`;
-    }
-    setInterval(updateUptime, 1000);
-    updateUptime();
+    <div id="chat-page" class="container" style="display: none;">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="user-info">
+                    <img id="current-user-avatar" class="user-avatar" src="" alt="Avatar">
+                    <div class="user-details">
+                        <div class="user-name" id="current-user-name"></div>
+                        <div class="user-title" id="current-user-title"></div>
+                    </div>
+                </div>
+                <button class="logout-btn" id="logout-btn">退出</button>
+            </div>
+            <div class="search-container">
+                <input type="text" class="search-input" id="search-input" placeholder="搜索用户名...">
+            </div>
+            <div class="contacts-list" id="contacts-list">
+                <!-- 联系人列表将通过JS动态生成 -->
+            </div>
+            <div id="admin-panel" class="admin-panel" style="display: none;">
+                <h3>管理员面板</h3>
+                <div class="admin-actions">
+                    <input type="text" id="admin-username" placeholder="用户名">
+                    <button class="admin-btn" id="ban-btn">封禁</button>
+                    <button class="admin-btn" id="unban-btn">解封</button>
+                    <button class="admin-btn" id="reset-pwd-btn">重置密码</button>
+                </div>
+            </div>
+            <div class="site-info" id="site-info">
+                本站已运行 <span id="uptime">0</span> 天
+            </div>
+        </div>
+        <div class="chat-container">
+            <div class="chat-header">
+                <img id="chat-user-avatar" class="chat-user-avatar" src="" alt="Avatar">
+                <div class="user-details">
+                    <div class="user-name" id="chat-user-name"></div>
+                    <div class="user-status" id="chat-user-status">离线</div>
+                </div>
+            </div>
+            <div class="chat-messages" id="chat-messages">
+                <!-- 消息将通过JS动态生成 -->
+            </div>
+            <div class="message-input-container">
+                <input type="text" class="message-input" id="message-input" placeholder="输入消息...">
+                <button class="send-button" id="send-button">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
 
-    // 页面路由
-    function showPage(pageId) {
-      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-      document.getElementById(pageId).classList.add('active');
-    }
+    <div id="user-modal" class="modal">
+        <div class="modal-content">
+            <h3>用户信息</h3>
+            <div class="form-group">
+                <label for="modal-username">用户名</label>
+                <input type="text" id="modal-username" readonly>
+            </div>
+            <div class="form-group">
+                <label for="modal-nickname">昵称</label>
+                <input type="text" id="modal-nickname" readonly>
+            </div>
+            <div class="form-group">
+                <label for="modal-gender">性别</label>
+                <input type="text" id="modal-gender" readonly>
+            </div>
+            <div class="form-group">
+                <label for="modal-bio">个人签名</label>
+                <input type="text" id="modal-bio" readonly>
+            </div>
+            <div class="form-group">
+                <label for="modal-status">状态</label>
+                <input type="text" id="modal-status" readonly>
+            </div>
+            <button class="btn" id="modal-close">关闭</button>
+        </div>
+    </div>
 
-    // 初始化
-    document.getElementById('app').style.display = 'flex';
-    showPage('home-page');
+    <script>
+        // 全局变量
+        let currentUser = null;
+        let currentChatUser = null;
+        let messages = {};
+        let users = [];
+        let siteStartTime = Date.now(); // 网站开始运行的时间
 
-    // 事件监听
-    document.getElementById('show-login').addEventListener('click', () => showPage('login-page'));
-    document.getElementById('show-register').addEventListener('click', () => showPage('register-page'));
-    document.getElementById('back-to-home').addEventListener('click', () => showPage('home-page'));
-    document.getElementById('back-to-home-2').addEventListener('click', () => showPage('home-page'));
+        // DOM元素
+        const authPage = document.getElementById('auth-page');
+        const chatPage = document.getElementById('chat-page');
+        const authTitle = document.getElementById('auth-title');
+        const authForm = document.getElementById('auth-form');
+        const authError = document.getElementById('auth-error');
+        const authSuccess = document.getElementById('auth-success');
+        const authSwitchLink = document.getElementById('auth-switch-link');
+        const registerFields = document.getElementById('register-fields');
+        const loginFields = document.getElementById('login-fields');
+        const authSubmit = document.getElementById('auth-submit');
+        const searchInput = document.getElementById('search-input');
+        const contactsList = document.getElementById('contacts-list');
+        const chatMessages = document.getElementById('chat-messages');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        const currentUserName = document.getElementById('current-user-name');
+        const currentUserTitle = document.getElementById('current-user-title');
+        const currentUserAvatar = document.getElementById('current-user-avatar');
+        const chatUserName = document.getElementById('chat-user-name');
+        const chatUserAvatar = document.getElementById('chat-user-avatar');
+        const logoutBtn = document.getElementById('logout-btn');
+        const adminPanel = document.getElementById('admin-panel');
+        const adminUsername = document.getElementById('admin-username');
+        const banBtn = document.getElementById('ban-btn');
+        const unbanBtn = document.getElementById('unban-btn');
+        const resetPwdBtn = document.getElementById('reset-pwd-btn');
+        const userModal = document.getElementById('user-modal');
+        const modalClose = document.getElementById('modal-close');
+        const uptimeElement = document.getElementById('uptime');
 
-    // 全局状态
-    let currentUser = null;
-    let currentChat = null;
-
-    // 工具函数
-    function authFetch(url, options) {
-      if (!currentUser) return Promise.reject('Not logged in');
-      const headers = options.headers || {};
-      headers['Authorization'] = btoa(\`\${currentUser.username}:\${currentUser.password}\`);
-      return fetch(url, { ...options, headers });
-    }
-
-    // 注册逻辑
-    document.getElementById('register-submit').addEventListener('click', async () => {
-      const errorEl = document.getElementById('register-error');
-      errorEl.textContent = '';
-      
-      const data = {
-        nickname: document.getElementById('reg-nickname').value,
-        username: document.getElementById('reg-username').value,
-        password: document.getElementById('reg-password').value,
-        inviteCode: document.getElementById('reg-invite').value,
-        avatar: document.getElementById('reg-avatar').value,
-        gender: document.getElementById('reg-gender').value,
-        signature: document.getElementById('reg-signature').value
-      };
-
-      // 前端验证
-      if (data.password.length < 6) {
-        errorEl.textContent = '密码至少6位';
-        return;
-      }
-      if (data.inviteCode !== 'xiyue666') {
-        errorEl.textContent = '邀请码错误';
-        return;
-      }
-
-      try {
-        const res = await fetch('/api/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data)
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAuthStatus();
+            setupEventListeners();
+            calculateUptime();
+            setInterval(calculateUptime, 60000); // 每分钟更新一次运行时间
         });
 
-        if (res.ok) {
-          alert('注册成功！请登录');
-          showPage('login-page');
-        } else {
-          const err = await res.json();
-          errorEl.textContent = err.error || '注册失败';
+        // 计算运行时间
+        function calculateUptime() {
+            const now = Date.now();
+            const diff = now - siteStartTime;
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+            uptimeElement.textContent = days;
         }
-      } catch (e) {
-        errorEl.textContent = '网络错误';
-      }
-    });
 
-    // 登录逻辑
-    document.getElementById('login-submit').addEventListener('click', async () => {
-      const errorEl = document.getElementById('login-error');
-      errorEl.textContent = '';
-      
-      const username = document.getElementById('login-username').value;
-      const password = document.getElementById('login-password').value;
-      const avatar = document.getElementById('login-avatar').value;
-
-      try {
-        const res = await fetch('/api/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password, avatar })
-        });
-
-        if (res.ok) {
-          const user = await res.json();
-          currentUser = { ...user, password };
-          startChat();
-        } else {
-          const err = await res.json();
-          errorEl.textContent = err.error || '登录失败';
-        }
-      } catch (e) {
-        errorEl.textContent = '网络错误';
-      }
-    });
-
-    // 启动聊天
-    function startChat() {
-      showPage('chat-page');
-      loadUsers();
-      setupChatListeners();
-      startMessagePolling();
-    }
-
-    // 加载用户列表
-    async function loadUsers() {
-      try {
-        const res = await authFetch('/api/users');
-        if (res.ok) {
-          const users = await res.json();
-          const userList = document.getElementById('user-list');
-          userList.innerHTML = '';
-          
-          users.forEach(user => {
-            if (user.username === currentUser.username) return;
+        // 设置事件监听器
+        function setupEventListeners() {
+            authSwitchLink.addEventListener('click', toggleAuthMode);
+            authForm.addEventListener('submit', handleAuth);
+            searchInput.addEventListener('input', handleSearch);
+            sendButton.addEventListener('click', sendMessage);
+            messageInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            logoutBtn.addEventListener('click', handleLogout);
             
-            const li = document.createElement('li');
-            li.className = 'user-item';
-            li.innerHTML = \`
-              <img src="\${user.avatar || 'https://i.imgur.com/0rxFJnF.png'}" class="avatar">
-              <div class="user-info">
-                <div class="username">\${user.nickname}</div>
-                <div class="user-title">\${user.title}</div>
-              </div>
-              \${user.username === 'admin' ? '<span class="online-dot"></span>' : ''}
-            \`;
-            li.addEventListener('click', () => startChatWith(user));
-            userList.appendChild(li);
-          });
+            // 管理员功能
+            banBtn.addEventListener('click', () => handleAdminAction('ban'));
+            unbanBtn.addEventListener('click', () => handleAdminAction('unban'));
+            resetPwdBtn.addEventListener('click', () => handleAdminAction('resetPassword'));
+            
+            // 模态框
+            modalClose.addEventListener('click', () => {
+                userModal.style.display = 'none';
+            });
+            
+            // 点击外部关闭模态框
+            window.addEventListener('click', (e) => {
+                if (e.target === userModal) {
+                    userModal.style.display = 'none';
+                }
+            });
         }
-      } catch (e) {
-        console.error('加载用户失败', e);
-      }
-    }
 
-    // 开始会话
-    function startChatWith(user) {
-      currentChat = user;
-      document.getElementById('chat-username').textContent = user.nickname;
-      document.getElementById('chat-title').innerHTML = user.title;
-      document.getElementById('chat-avatar').src = user.avatar || 'https://i.imgur.com/0rxFJnF.png';
-      loadMessages();
-    }
+        // 切换登录/注册模式
+        function toggleAuthMode() {
+            const isLogin = registerFields.style.display === 'none';
+            if (isLogin) {
+                // 切换到注册
+                authTitle.textContent = '注册';
+                registerFields.style.display = 'block';
+                loginFields.style.display = 'none';
+                authSubmit.textContent = '注册';
+                authSwitchLink.textContent = '已有账号？立即登录';
+            } else {
+                // 切换到登录
+                authTitle.textContent = '登录';
+                registerFields.style.display = 'none';
+                loginFields.style.display = 'block';
+                authSubmit.textContent = '登录';
+                authSwitchLink.textContent = '没有账号？立即注册';
+            }
+            authError.style.display = 'none';
+            authSuccess.style.display = 'none';
+        }
 
-    // 加载消息
-    async function loadMessages() {
-      if (!currentChat) return;
-      
-      try {
-        const res = await authFetch(\`/api/messages?with=\${currentChat.username}\`);
-        if (res.ok) {
-          const messages = await res.json();
-          const area = document.getElementById('message-area');
-          area.innerHTML = '';
-          
-          messages.forEach(msg => {
-            const isOwn = msg.from === currentUser.username;
+        // 处理认证（登录/注册）
+        async function handleAuth(e) {
+            e.preventDefault();
+            const formData = new FormData(authForm);
+            const isLogin = registerFields.style.display === 'none';
+            
+            try {
+                let response;
+                if (isLogin) {
+                    // 登录逻辑
+                    const data = {
+                        username: formData.get('username'),
+                        password: formData.get('password'),
+                        avatar: formData.get('avatar') || null
+                    };
+                    response = await fetch('/api/login', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(data)
+                    });
+                } else {
+                    // 注册逻辑
+                    const data = {
+                        nickname: formData.get('nickname'),
+                        username: formData.get('username'),
+                        password: formData.get('password'),
+                        avatar: formData.get('avatar'),
+                        gender: formData.get('gender'),
+                        bio: formData.get('bio') || '',
+                        inviteCode: formData.get('inviteCode')
+                    };
+                    response = await fetch('/api/register', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(data)
+                    });
+                }
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // 认证成功
+                    currentUser = result.user;
+                    localStorage.setItem('authToken', result.token);
+                    showChatPage();
+                    loadUsers();
+                } else {
+                    // 显示错误信息
+                    showAuthError(result.message);
+                }
+            } catch (error) {
+                showAuthError('网络错误，请稍后重试');
+            }
+        }
+
+        // 显示认证错误
+        function showAuthError(message) {
+            authError.textContent = message;
+            authError.style.display = 'block';
+            authSuccess.style.display = 'none';
+        }
+
+        // 显示认证成功
+        function showAuthSuccess(message) {
+            authSuccess.textContent = message;
+            authSuccess.style.display = 'block';
+            authError.style.display = 'none';
+        }
+
+        // 检查认证状态
+        async function checkAuthStatus() {
+            const token = localStorage.getItem('authToken');
+            if (!token) return;
+            
+            try {
+                const response = await fetch('/api/me', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    currentUser = result.user;
+                    showChatPage();
+                    loadUsers();
+                } else {
+                    localStorage.removeItem('authToken');
+                }
+            } catch (error) {
+                console.error('检查认证状态失败:', error);
+            }
+        }
+
+        // 显示聊天页面
+        function showChatPage() {
+            authPage.style.display = 'none';
+            chatPage.style.display = 'flex';
+            
+            // 更新当前用户信息
+            currentUserName.textContent = currentUser.nickname;
+            currentUserTitle.textContent = currentUser.title;
+            currentUserTitle.className = `user-title title-${currentUser.title === '创始人' ? 'founder' : 'member'}`;
+            currentUserAvatar.src = currentUser.avatar;
+            
+            // 如果是管理员，显示管理员面板
+            if (currentUser.username === 'admin') {
+                adminPanel.style.display = 'block';
+            }
+        }
+
+        // 加载用户列表
+        async function loadUsers() {
+            try {
+                const token = localStorage.getItem('authToken');
+                const response = await fetch('/api/users', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    users = result.users.filter(user => user.username !== currentUser.username);
+                    renderUsers(users);
+                }
+            } catch (error) {
+                console.error('加载用户列表失败:', error);
+            }
+        }
+
+        // 渲染用户列表
+        function renderUsers(usersList) {
+            contactsList.innerHTML = '';
+            
+            usersList.forEach(user => {
+                const contactItem = document.createElement('div');
+                contactItem.className = 'contact-item';
+                contactItem.dataset.username = user.username;
+                
+                contactItem.innerHTML = `
+                    <img src="${user.avatar}" alt="${user.nickname}" class="contact-avatar">
+                    <div class="contact-details">
+                        <div class="contact-name">
+                            ${user.nickname}
+                            ${user.title ? `<span class="user-title title-${user.title === '创始人' ? 'founder' : 'member'}">${user.title}</span>` : ''}
+                        </div>
+                        <div class="contact-status">${user.bio || '暂无签名'}</div>
+                    </div>
+                    ${user.unreadCount > 0 ? `<div class="unread-count">${user.unreadCount}</div>` : ''}
+                `;
+                
+                contactItem.addEventListener('click', () => {
+                    openChat(user);
+                });
+                
+                contactsList.appendChild(contactItem);
+            });
+        }
+
+        // 处理搜索
+        function handleSearch() {
+            const searchTerm = searchInput.value.toLowerCase();
+            if (!searchTerm) {
+                renderUsers(users);
+                return;
+            }
+            
+            const filteredUsers = users.filter(user => 
+                user.username.toLowerCase().includes(searchTerm) || 
+                user.nickname.toLowerCase().includes(searchTerm)
+            );
+            
+            renderUsers(filteredUsers);
+        }
+
+        // 打开聊天
+        async function openChat(user) {
+            currentChatUser = user;
+            
+            // 更新聊天头部
+            chatUserName.textContent = user.nickname;
+            chatUserAvatar.src = user.avatar;
+            
+            // 加载消息
+            await loadMessages(user.username);
+            
+            // 标记消息为已读
+            await markMessagesAsRead(user.username);
+            
+            // 更新用户列表（清除未读计数）
+            const contactItem = contactsList.querySelector(`[data-username="${user.username}"]`);
+            if (contactItem) {
+                const unreadCount = contactItem.querySelector('.unread-count');
+                if (unreadCount) {
+                    unreadCount.remove();
+                }
+            }
+        }
+
+        // 加载消息
+        async function loadMessages(username) {
+            try {
+                const token = localStorage.getItem('authToken');
+                const response = await fetch(`/api/messages/${username}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    messages[username] = result.messages;
+                    renderMessages(messages[username]);
+                }
+            } catch (error) {
+                console.error('加载消息失败:', error);
+            }
+        }
+
+        // 渲染消息
+        function renderMessages(messagesList) {
+            chatMessages.innerHTML = '';
+            
+            messagesList.forEach(message => {
+                const messageElement = document.createElement('div');
+                messageElement.className = `message ${message.sender === currentUser.username ? 'message-outgoing' : 'message-incoming'}`;
+                
+                const messageTime = new Date(message.timestamp).toLocaleTimeString();
+                
+                messageElement.innerHTML = `
+                    ${message.sender !== currentUser.username ? `<div class="message-sender">${getUserNickname(message.sender)}</div>` : ''}
+                    <div class="message-content">${escapeHtml(message.content)}</div>
+                    <div class="message-time">${messageTime}</div>
+                `;
+                
+                chatMessages.appendChild(messageElement);
+            });
+            
+            // 滚动到底部
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        // 发送消息
+        async function sendMessage() {
+            const content = messageInput.value.trim();
+            if (!content || !currentChatUser) return;
+            
+            try {
+                const token = localStorage.getItem('authToken');
+                const response = await fetch('/api/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        recipient: currentChatUser.username,
+                        content: content
+                    })
+                });
+                
+                if (response.ok) {
+                    // 清空输入框
+                    messageInput.value = '';
+                    
+                    // 重新加载消息
+                    await loadMessages(currentChatUser.username);
+                } else {
+                    console.error('发送消息失败');
+                }
+            } catch (error) {
+                console.error('发送消息失败:', error);
+            }
+        }
+
+        // 标记消息为已读
+        async function markMessagesAsRead(username) {
+            try {
+                const token = localStorage.getItem('authToken');
+                await fetch('/api/messages/read', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        sender: username
+                    })
+                });
+            } catch (error) {
+                console.error('标记消息为已读失败:', error);
+            }
+        }
+
+        // 处理退出
+        function handleLogout() {
+            localStorage.removeItem('authToken');
+            currentUser = null;
+            chatPage.style.display = 'none';
+            authPage.style.display = 'flex';
+            
+            // 重置表单
+            authForm.reset();
+            toggleAuthMode();
+        }
+
+        // 处理管理员操作
+        async function handleAdminAction(action) {
+            const username = adminUsername.value.trim();
+            if (!username) {
+                alert('请输入用户名');
+                return;
+            }
+            
+            try {
+                const token = localStorage.getItem('authToken');
+                const response = await fetch('/api/admin', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        action: action,
+                        username: username
+                    })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    alert(result.message);
+                    adminUsername.value = '';
+                    loadUsers(); // 刷新用户列表
+                } else {
+                    alert(result.message);
+                }
+            } catch (error) {
+                console.error('管理员操作失败:', error);
+                alert('操作失败，请稍后重试');
+            }
+        }
+
+        // 获取用户昵称
+        function getUserNickname(username) {
+            if (username === currentUser.username) return currentUser.nickname;
+            const user = users.find(u => u.username === username);
+            return user ? user.nickname : username;
+        }
+
+        // 转义HTML，防止XSS
+        function escapeHtml(text) {
             const div = document.createElement('div');
-            div.className = \`message \${isOwn ? 'own' : 'other'}\`;
-            div.textContent = msg.content;
-            area.appendChild(div);
-          });
-          area.scrollTop = area.scrollHeight;
+            div.textContent = text;
+            return div.innerHTML;
         }
-      } catch (e) {
-        console.error('加载消息失败', e);
-      }
-    }
 
-    // 消息轮询
-    let pollInterval;
-    function startMessagePolling() {
-      if (pollInterval) clearInterval(pollInterval);
-      pollInterval = setInterval(() => {
-        if (currentChat) loadMessages();
-      }, 5000);
-    }
-
-    // 发送消息
-    function setupChatListeners() {
-      document.getElementById('send-btn').addEventListener('click', sendMessage);
-      document.getElementById('message-input').addEventListener('keypress', e => {
-        if (e.key === 'Enter') sendMessage();
-      });
-    }
-
-    async function sendMessage() {
-      const input = document.getElementById('message-input');
-      const content = input.value.trim();
-      if (!content || !currentChat) return;
-      
-      try {
-        const res = await authFetch('/api/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to: currentChat.username,
-            message: content
-          })
-        });
-
-        if (res.ok) {
-          input.value = '';
-          loadMessages(); // 立即刷新
-        }
-      } catch (e) {
-        console.error('发送失败', e);
-      }
-    }
-  </script>
+        // 轮询新消息
+        setInterval(async () => {
+            if (!currentUser) return;
+            
+            try {
+                const token = localStorage.getItem('authToken');
+                const response = await fetch('/api/check-messages', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.hasNewMessages) {
+                        loadUsers(); // 刷新用户列表
+                    }
+                }
+            } catch (error) {
+                console.error('检查新消息失败:', error);
+            }
+        }, 5000); // 每5秒检查一次新消息
+    </script>
 </body>
-</html>
-`.replace(/\s+/g, ' ').trim();
-
-async function handleRequest(request, env) {
-  const url = new URL(request.url);
-  const path = url.pathname;
-  
-  // 初始化KV（自动创建admin）
-  await initKV(env);
-
-  // API路由
-  if (path.startsWith('/api/')) {
-    return handleApi(request, env);
-  }
-  
-  // 首页
-  if (path === '/') {
-    return new Response(HTML, {
-      headers: { 'Content-Type': 'text/html' }
-    });
-  }
-  
-  return new Response('Not Found', { status: 404 });
-}
-
-async function initKV(env) {
-  // 检查admin是否存在
-  const adminExists = await env.XIYUE520.get('user:admin');
-  if (adminExists) return;
-
-  // 创建admin用户
-  const adminUser = {
-    username: 'admin',
-    password: 'xiyue777',
-    nickname: 'Admin',
-    avatar: 'https://i.imgur.com/0rxFJnF.png',
-    gender: '',
-    signature: '系统创始人',
-    title: '<span style="color:red">创始人</span>',
-    createdAt: Date.now()
-  };
-  
-  await env.XIYUE520.put('user:admin', JSON.stringify(adminUser));
-  await env.XIYUE520.put('users', JSON.stringify(['admin']));
-}
-
-async function handleApi(request, env) {
-  const url = new URL(request.url);
-  const method = request.method;
-  
-  // 验证登录 (Basic Auth)
-  async function verifyAuth() {
-    const authHeader = request.headers.get('Authorization');
-    if (!authHeader) return null;
-    
-    const [type, credentials] = authHeader.split(' ');
-    if (type !== 'Basic') return null;
-    
-    const [username, password] = atob(credentials).split(':');
-    const userKey = `user:${username}`;
-    const userData = await env.XIYUE520.get(userKey);
-    
-    if (!userData) return null;
-    const user = JSON.parse(userData);
-    
-    return user.password === password ? { ...user, password } : null;
-  }
-
-  // 注册API
-  if (url.pathname === '/api/register' && method === 'POST') {
-    const data = await request.json();
-    
-    // 验证邀请码
-    if (data.inviteCode !== 'xiyue666') {
-      return json({ error: '邀请码错误' }, 400);
-    }
-    
-    // 检查用户名
-    const existing = await env.XIYUE520.get(`user:${data.username}`);
-    if (existing) {
-      return json({ error: '用户名已存在' }, 400);
-    }
-    
-    // 创建用户
-    const newUser = {
-      username: data.username,
-      password: data.password,
-      nickname: data.nickname,
-      avatar: data.avatar,
-      gender: data.gender,
-      signature: data.signature,
-      title: '<span style="color:pink">注册会员</span>',
-      createdAt: Date.now()
-    };
-    
-    await env.XIYUE520.put(`user:${data.username}`, JSON.stringify(newUser));
-    
-    // 更新用户列表
-    const users = JSON.parse(await env.XIYUE520.get('users') || '[]');
-    users.push(data.username);
-    await env.XIYUE520.put('users', JSON.stringify(users));
-    
-    return json({ success: true });
-  }
-
-  // 登录API
-  if (url.pathname === '/api/login' && method === 'POST') {
-    const { username, password, avatar } = await request.json();
-    const user = await env.XIYUE520.get(`user:${username}`);
-    
-    if (!user) return json({ error: '用户不存在' }, 401);
-    
-    const userData = JSON.parse(user);
-    if (userData.password !== password) {
-      return json({ error: '密码错误' }, 401);
-    }
-    
-    // 更新头像（如果提供）
-    if (avatar) {
-      userData.avatar = avatar;
-      await env.XIYUE520.put(`user:${username}`, JSON.stringify(userData));
-    }
-    
-    // 移除密码返回
-    const { password: _, ...safeUser } = userData;
-    return json(safeUser);
-  }
-
-  // 需要登录的API
-  const user = await verifyAuth();
-  if (!user) return json({ error: '未授权' }, 401);
-
-  // 用户列表API
-  if (url.pathname === '/api/users' && method === 'GET') {
-    const users = JSON.parse(await env.XIYUE520.get('users') || '[]');
-    const userList = [];
-    
-    for (const username of users) {
-      const userData = await env.XIYUE520.get(`user:${username}`);
-      if (userData) {
-        const { password, ...safeUser } = JSON.parse(userData);
-        userList.push(safeUser);
-      }
-    }
-    
-    return json(userList);
-  }
-
-  // 消息API
-  if (url.pathname === '/api/messages' && method === 'GET') {
-    const withUser = url.searchParams.get('with');
-    if (!withUser) return json({ error: '参数错误' }, 400);
-    
-    const chatId = [user.username, withUser].sort().join('_');
-    const messages = JSON.parse(await env.XIYUE520.get(`chat:${chatId}`) || '[]');
-    
-    return json(messages);
-  }
-
-  // 发送消息API
-  if (url.pathname === '/api/send' && method === 'POST') {
-    const { to, message } = await request.json();
-    if (!to || !message) return json({ error: '参数错误' }, 400);
-    
-    // 检查接收者
-    const receiver = await env.XIYUE520.get(`user:${to}`);
-    if (!receiver) return json({ error: '用户不存在' }, 400);
-    
-    // 创建消息
-    const newMsg = {
-      from: user.username,
-      to,
-      content: message,
-      timestamp: Date.now()
-    };
-    
-    // 保存消息
-    const chatId = [user.username, to].sort().join('_');
-    const messages = JSON.parse(await env.XIYUE520.get(`chat:${chatId}`) || '[]');
-    messages.push(newMsg);
-    
-    // 限制100条
-    if (messages.length > 100) messages.shift();
-    await env.XIYUE520.put(`chat:${chatId}`, JSON.stringify(messages));
-    
-    return json({ success: true });
-  }
-
-  return new Response('Not Found', { status: 404 });
-}
-
-// 工具函数
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json' }
-  });
-}
-
-addEventListener('fetch', event => {
-  event.respondWith(handleRequest(event.request, event.env));
-});
+</html>`;
